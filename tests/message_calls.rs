@@ -11,7 +11,7 @@ fn calldatasize_reports_bytes_including_partial_words() {
     let mut state = WorldState::default();
     state.account_mut(caller).balance = 1;
     // PUSH1 key 0, CALLDATASIZE (value), SSTORE, STOP.
-    state.set_code(target, vec![0x60, 0x00, 0x36, 0x55, 0x00]);
+    state.set_code(target, vec![0x36, 0x60, 0x00, 0x55, 0x00]);
     let mut evm = Evm::new(state);
     let result = evm.transact(transaction(caller, target, vec![0xaa; 33]));
     assert!(matches!(result.reason, minievm::core::ExitReason::Succeed));
@@ -25,11 +25,11 @@ fn call_executes_target_and_commits_its_storage() {
     let child = Address::from_last_byte(3);
     let mut state = WorldState::default();
     state.account_mut(caller).balance = 1;
-    state.set_code(child, vec![0x60, 0x00, 0x60, 0x2a, 0x55, 0x00]);
+    state.set_code(child, vec![0x60, 0x2a, 0x60, 0x00, 0x55, 0x00]);
     // gas, to, value, in_offset, in_size, out_offset, out_size, CALL, STOP.
     state.set_code(
         parent,
-        vec![0x61, 0x27, 0x10, 0x60, 3, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0xf1, 0x00],
+        vec![0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 3, 0x61, 0x27, 0x10, 0xf1, 0x00],
     );
     let mut evm = Evm::new(state);
     let result = evm.transact(transaction(caller, parent, vec![]));
@@ -44,10 +44,10 @@ fn reverted_child_call_does_not_leak_storage() {
     let child = Address::from_last_byte(3);
     let mut state = WorldState::default();
     state.account_mut(caller).balance = 1;
-    state.set_code(child, vec![0x60, 0x00, 0x60, 7, 0x55, 0x60, 0, 0x60, 0, 0xfd]);
+    state.set_code(child, vec![0x60, 7, 0x60, 0x00, 0x55, 0x60, 0, 0x60, 0, 0xfd]);
     state.set_code(
         parent,
-        vec![0x61, 0x27, 0x10, 0x60, 3, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0xf1, 0x00],
+        vec![0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 3, 0x61, 0x27, 0x10, 0xf1, 0x00],
     );
     let mut evm = Evm::new(state);
     let result = evm.transact(transaction(caller, parent, vec![]));

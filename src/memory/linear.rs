@@ -17,6 +17,13 @@ impl Memory {
     pub fn is_empty(&self) -> bool {
         self.bytes.is_empty()
     }
+    pub fn ensure_range(&mut self, offset: usize, size: usize) -> Result<(), VmError> {
+        if size == 0 {
+            return Ok(());
+        }
+        let end = offset.checked_add(size).ok_or(VmError::MemoryLimitExceeded)?;
+        self.expand(end)
+    }
     pub fn read(&mut self, offset: usize, size: usize) -> Result<Vec<u8>, VmError> {
         if size == 0 {
             return Ok(Vec::new());
@@ -26,6 +33,9 @@ impl Memory {
         Ok(self.bytes[offset..end].to_vec())
     }
     pub fn write(&mut self, offset: usize, value: &[u8]) -> Result<(), VmError> {
+        if value.is_empty() {
+            return Ok(());
+        }
         let end = offset.checked_add(value.len()).ok_or(VmError::MemoryLimitExceeded)?;
         self.expand(end)?;
         self.bytes[offset..end].copy_from_slice(value);
@@ -36,6 +46,9 @@ impl Memory {
             return Err(VmError::MemoryLimitExceeded);
         }
         if self.bytes.len() < end {
+            self.bytes
+                .try_reserve(end - self.bytes.len())
+                .map_err(|_| VmError::MemoryLimitExceeded)?;
             self.bytes.resize(end, 0);
         }
         Ok(())

@@ -52,12 +52,10 @@ impl Frame {
     }
 
     pub(super) fn pop2(&mut self) -> Result<(Word, Word), VmError> {
-        // EVM convention: the top of the stack is the right-hand operand
-        // (the last value pushed), so `(left, right)` mirrors the source
-        // order of `a OP b` where the contract pushes `a` then `b`.
-        let right = self.pop()?;
-        let left = self.pop()?;
-        Ok((left, right))
+        // Operand zero is the top of the stack (Yellow Paper convention).
+        let first = self.pop()?;
+        let second = self.pop()?;
+        Ok((first, second))
     }
 
     pub(super) fn duplicate(&mut self, depth: usize) -> Result<(), VmError> {

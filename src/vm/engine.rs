@@ -76,17 +76,19 @@ impl Evm {
                 output,
                 logs: self.state.logs().to_vec(),
             },
-            Err(VmError::Reverted(output)) => {
+            Err(VmError::RevertedWithGas { output, remaining }) => {
                 self.state.restore(checkpoint);
+                self.state.account_mut(tx.caller).nonce = next_nonce;
                 ExecutionResult {
                     reason: ExitReason::Revert,
-                    gas_used: gas_limit,
+                    gas_used: gas_limit - remaining,
                     output,
                     logs: vec![],
                 }
             }
             Err(_) => {
                 self.state.restore(checkpoint);
+                self.state.account_mut(tx.caller).nonce = next_nonce;
                 ExecutionResult {
                     reason: ExitReason::Error,
                     gas_used: gas_limit,
@@ -119,10 +121,11 @@ impl Evm {
             let opcode = code.bytes()[frame.pc];
             frame.pc += 1;
             gas.charge(opcode_cost(opcode))?;
-            if let Some(output) =
-                instructions::dispatch(self, &mut frame, &mut gas, address, depth, &code, opcode)?
+            match instructions::dispatch(self, &mut frame, &mut gas, address, depth, &code, opcode)
             {
-                return Ok((output, gas.remaining()));
+                Ok(Some(output)) => return Ok((output, gas.remaining())),
+                Ok(None) => {}
+                Err(error) => return Err(error),
             }
         }
         Ok((vec![], gas.remaining()))

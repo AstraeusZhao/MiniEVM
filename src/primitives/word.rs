@@ -1,7 +1,7 @@
 use std::fmt;
 
 /// A fixed 256-bit EVM word. Arithmetic wraps modulo 2^256.
-#[derive(Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Word(pub [u64; 4]);
 
 impl Word {
@@ -76,11 +76,12 @@ impl Word {
         let mut quotient = Self::ZERO;
         let mut remainder = Self::ZERO;
         for bit_index in (0..256).rev() {
+            let overflow = remainder.0[3] >> 63 != 0;
             remainder = remainder.shl1();
             if self.bit(bit_index) {
                 remainder.0[0] |= 1;
             }
-            if remainder >= rhs {
+            if overflow || remainder >= rhs {
                 remainder = remainder.wrapping_sub(rhs);
                 quotient.set_bit(bit_index);
             }
@@ -148,5 +149,16 @@ impl fmt::Debug for Word {
             write!(formatter, "{part:016x}")?;
         }
         Ok(())
+    }
+}
+
+impl Ord for Word {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.iter().rev().cmp(other.0.iter().rev())
+    }
+}
+impl PartialOrd for Word {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }

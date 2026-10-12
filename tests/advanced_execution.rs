@@ -11,10 +11,7 @@ fn arithmetic_and_bitwise_instructions_persist_the_expected_value() {
     let mut state = WorldState::default();
     state.account_mut(caller).balance = 1;
     // ((6 * 7) XOR 3) is stored in storage slot 0.
-    state.set_code(
-        target,
-        vec![0x60, 6, 0x60, 7, 0x02, 0x60, 3, 0x18, 0x60, 0x00, 0x60, 41, 0x55, 0],
-    );
+    state.set_code(target, vec![0x60, 6, 0x60, 7, 0x02, 0x60, 3, 0x18, 0x60, 0x00, 0x55, 0]);
     let mut evm = Evm::new(state);
     assert!(matches!(evm.transact(tx(caller, target)).reason, minievm::core::ExitReason::Succeed));
     assert_eq!(evm.state.account(target).unwrap().storage[&Word::ZERO], Word::from_u64(41));
@@ -35,7 +32,7 @@ fn logs_are_returned_in_successful_receipts() {
     let mut state = WorldState::default();
     state.account_mut(caller).balance = 1;
     // LOG1 with offset 0, size 0, topic 0x2a: stack [offset, size, topic].
-    state.set_code(target, vec![0x60, 0x00, 0x60, 0x00, 0x60, 0x2a, 0xa1, 0]);
+    state.set_code(target, vec![0x60, 0x2a, 0x60, 0x00, 0x60, 0x00, 0xa1, 0]);
     let mut evm = Evm::new(state);
     let receipt = evm.transact(tx(caller, target));
     assert_eq!(receipt.logs.len(), 1);
@@ -48,7 +45,7 @@ fn invalid_transactions_clear_logs_from_the_previous_receipt() {
     let target = Address::from_last_byte(2);
     let mut state = WorldState::default();
     state.account_mut(caller).balance = 1;
-    state.set_code(target, vec![0x60, 0x00, 0x60, 0x00, 0x60, 0x2a, 0xa1, 0]);
+    state.set_code(target, vec![0x60, 0x2a, 0x60, 0x00, 0x60, 0x00, 0xa1, 0]);
     let mut evm = Evm::new(state);
 
     assert_eq!(evm.transact(tx(caller, target)).logs.len(), 1);
@@ -91,7 +88,7 @@ fn nonce_overflow_is_rejected_without_panicking() {
 }
 
 #[test]
-fn nonce_is_consumed_only_by_a_successful_transaction() {
+fn nonce_is_consumed_by_an_accepted_transaction() {
     let caller = Address::from_last_byte(1);
     let target = Address::from_last_byte(2);
     let mut state = WorldState::default();

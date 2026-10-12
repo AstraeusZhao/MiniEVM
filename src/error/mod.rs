@@ -15,4 +15,5 @@ pub enum VmError {
     ValueOverflow,
     CallDepthExceeded,
     Reverted(Vec<u8>),
+    RevertedWithGas { output: Vec<u8>, remaining: u64 },
 }

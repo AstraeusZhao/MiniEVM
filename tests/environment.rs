@@ -27,8 +27,8 @@ fn mstore_and_mload_round_trip() {
     let target = Address::from_last_byte(2);
     let mut state = WorldState::default();
     state.account_mut(caller).balance = 1;
-    // PUSH1 offset, PUSH1 value, MSTORE, PUSH1 offset, MLOAD, STOP
-    state.set_code(target, vec![0x60, 0x00, 0x60, 0x2a, 0x52, 0x60, 0x00, 0x51, 0x00]);
+    // PUSH1 value, PUSH1 offset, MSTORE, PUSH1 offset, MLOAD, STOP
+    state.set_code(target, vec![0x60, 0x2a, 0x60, 0x00, 0x52, 0x60, 0x00, 0x51, 0x00]);
     let mut evm = Evm::new(state);
     let result = evm.transact(Transaction {
         caller,

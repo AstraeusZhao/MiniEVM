@@ -25,7 +25,7 @@ pub(super) fn dispatch(
         0x03 => binary(frame, Word::wrapping_sub)?,
         0x04 => binary(frame, Word::unsigned_div)?,
         0x1a => {
-            let index = frame.pop()?.low_u64();
+            let index = frame.pop()?.low_u64_bounded().unwrap_or(u64::MAX);
             let value = frame.pop()?;
             frame.push(value.byte(index))?;
         }
@@ -126,7 +126,10 @@ pub(super) fn dispatch(
             let (offset, size) = frame.pop2()?;
             let offset = offset.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
             let size = size.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
-            return Err(VmError::Reverted(frame.memory.read(offset, size)?));
+            return Err(VmError::RevertedWithGas {
+                output: frame.memory.read(offset, size)?,
+                remaining: gas.remaining(),
+            });
         }
         _ => return Err(VmError::InvalidOpcode(opcode)),
     }
@@ -152,8 +155,10 @@ fn jump(frame: &mut Frame, code: &AnalyzedCode, target: usize) -> Result<(), VmE
 fn push_immediate(frame: &mut Frame, code: &[u8], opcode: u8) -> Result<(), VmError> {
     let width = (opcode - 0x5f) as usize;
     let end = frame.pc.checked_add(width).ok_or(VmError::CodeOutOfBounds)?;
-    let bytes = code.get(frame.pc..end).ok_or(VmError::CodeOutOfBounds)?;
-    frame.push(Word::from_be_slice(bytes))?;
+    let mut bytes = vec![0; width];
+    let available = code.len().saturating_sub(frame.pc).min(width);
+    bytes[..available].copy_from_slice(&code[frame.pc..frame.pc + available]);
+    frame.push(Word::from_be_slice(&bytes))?;
     frame.pc = end;
     Ok(())
 }
@@ -163,16 +168,13 @@ fn emit_log(
     address: Address,
     topic_count: usize,
 ) -> Result<(), VmError> {
-    // EVM stack layout is [offset, size, topic1..topicN] with topicN on top.
-    // Topics are collected from the top down and reversed to preserve the
-    // order Solidity pushes them (topic0 first in the log entry).
+    // Pop memory offset and size first, then topic0..topicN.
+    let offset = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
+    let size = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
     let mut topics = Vec::with_capacity(topic_count);
     for _ in 0..topic_count {
         topics.push(frame.pop()?);
     }
-    topics.reverse();
-    let size = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
-    let offset = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
     let data = frame.memory.read(offset, size)?;
     evm.state.emit_log(LogEntry { address, topics, data });
     Ok(())
@@ -180,21 +182,23 @@ fn emit_log(
 
 /// Copies CALLDATA/CODE into memory. Stack layout: [mem_offset, src_offset, size].
 fn copy_to_memory(frame: &mut Frame, source: &[u8]) -> Result<(), VmError> {
-    let size = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
-    let source_offset =
-        frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
     let memory_offset =
         frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
+    let source_offset = frame.pop()?.low_u64_bounded().unwrap_or(u64::MAX) as usize;
+    let size = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
+    frame.memory.ensure_range(memory_offset, size)?;
     let bytes = calldata::copy_padded(source, source_offset, size);
     frame.memory.write(memory_offset, &bytes)
 }
 
 /// Copies RETURNDATA into memory. Stack layout: [mem_offset, data_offset, size].
 fn copy_return_data(frame: &mut Frame) -> Result<(), VmError> {
-    let size = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
-    let data_offset = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
     let memory_offset =
         frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
+    let data_offset =
+        frame.pop()?.low_u64_bounded().ok_or(VmError::ReturnDataOutOfBounds)? as usize;
+    let size = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)? as usize;
+    frame.memory.ensure_range(memory_offset, size)?;
     let end = data_offset.checked_add(size).ok_or(VmError::ReturnDataOutOfBounds)?;
     let bytes =
         frame.return_data.get(data_offset..end).ok_or(VmError::ReturnDataOutOfBounds)?.to_vec();
@@ -207,16 +211,15 @@ fn call(
     gas: &mut crate::gas::GasMeter,
     depth: u16,
 ) -> Result<(), VmError> {
-    // EVM stack layout: [gas, to, value, in_offset, in_size, out_offset, out_size],
-    // with out_size on top. Gas and value are 256-bit words; values above
-    // u64 are treated as "request all remaining gas" and "unpayable value".
-    let out_size = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)?;
-    let out_offset = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)?;
-    let in_size = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)?;
-    let in_offset = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)?;
-    let value_word = frame.pop()?;
-    let target = Address::from_word(frame.pop()?);
+    // Top first: gas, to, value, input offset/size, output offset/size.
     let gas_limit = frame.pop()?.low_u64_bounded().unwrap_or(u64::MAX);
+    let target = Address::from_word(frame.pop()?);
+    let value_word = frame.pop()?;
+    let in_offset = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)?;
+    let in_size = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)?;
+    let out_offset = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)?;
+    let out_size = frame.pop()?.low_u64_bounded().ok_or(VmError::MemoryLimitExceeded)?;
+    frame.memory.ensure_range(out_offset as usize, out_size as usize)?;
 
     let input = frame.memory.read(in_offset as usize, in_size as usize)?;
     let forwarded_gas = gas.forward(gas_limit)?;
@@ -249,9 +252,9 @@ fn call(
             write_return_data(frame, out_offset, out_size)?;
             frame.push(Word::ONE)
         }
-        Err(VmError::Reverted(output)) => {
+        Err(VmError::RevertedWithGas { output, remaining }) => {
             evm.state.restore(checkpoint);
-            gas.settle_child(forwarded_gas, 0);
+            gas.settle_child(forwarded_gas, remaining);
             frame.return_data = output;
             write_return_data(frame, out_offset, out_size)?;
             frame.push(Word::ZERO)
@@ -264,12 +267,9 @@ fn call(
     }
 }
 
-/// Copies return data into memory at [out_offset, out_offset + out_size),
-/// zero-padding beyond the available bytes as the EVM requires.
+/// Extend the requested return area, but overwrite only actual returned bytes.
 fn write_return_data(frame: &mut Frame, out_offset: u64, out_size: u64) -> Result<(), VmError> {
-    let size = out_size as usize;
-    let mut buffer = vec![0u8; size];
-    let copy_len = size.min(frame.return_data.len());
-    buffer[..copy_len].copy_from_slice(&frame.return_data[..copy_len]);
-    frame.memory.write(out_offset as usize, &buffer)
+    frame.memory.ensure_range(out_offset as usize, out_size as usize)?;
+    let copy_len = (out_size as usize).min(frame.return_data.len());
+    frame.memory.write(out_offset as usize, &frame.return_data[..copy_len])
 }

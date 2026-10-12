@@ -4,8 +4,8 @@ use minievm::{Address, Evm, Transaction, Word, WorldState};
 fn stores_and_loads_a_word() {
     let contract = Address::from_last_byte(2);
     let caller = Address::from_last_byte(1);
-    // PUSH1 key, PUSH1 value, SSTORE, PUSH1 key, SLOAD, STOP
-    let code = vec![0x60, 0x01, 0x60, 0x2a, 0x55, 0x60, 0x01, 0x54, 0x00];
+    // PUSH1 value, PUSH1 key, SSTORE, PUSH1 key, SLOAD, STOP
+    let code = vec![0x60, 0x2a, 0x60, 0x01, 0x55, 0x60, 0x01, 0x54, 0x00];
     let mut state = WorldState::default();
     state.account_mut(caller).balance = 10;
     state.set_code(contract, code);
