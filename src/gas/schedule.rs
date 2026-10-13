@@ -13,7 +13,7 @@ pub const fn opcode_cost(opcode: u8) -> u64 {
     costs[0x16] = 3;
     costs[0x17] = 3;
     costs[0x18] = 3;
-    costs[0x1a] = 0;
+    costs[0x1a] = 3;
     costs[0x30] = 2;
     costs[0x31] = 100;
     costs[0x33] = 2;
@@ -25,6 +25,7 @@ pub const fn opcode_cost(opcode: u8) -> u64 {
     costs[0x39] = 3;
     costs[0x3d] = 2;
     costs[0x3e] = 3;
+    costs[0x41] = 2;
     costs[0x42] = 2;
     costs[0x43] = 2;
     costs[0x46] = 2;
@@ -36,6 +37,14 @@ pub const fn opcode_cost(opcode: u8) -> u64 {
     costs[0x56] = 8;
     costs[0x57] = 10;
     costs[0x5b] = 1;
+    costs[0x58] = 2;
+    costs[0x59] = 2;
+    costs[0x5a] = 2;
+    costs[0xa0] = 375;
+    costs[0xa1] = 375;
+    costs[0xa2] = 375;
+    costs[0xa3] = 375;
+    costs[0xa4] = 375;
     costs[0xf1] = 700;
     costs[0xf3] = 0;
     costs[0xfd] = 0;

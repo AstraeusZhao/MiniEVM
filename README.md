@@ -1,12 +1,17 @@
 # MiniEVM
 
-MiniEVM is a teaching interpreter for a subset of EVM bytecode. It is suitable
-for learning and controlled research examples. It is not a fork-compatible Ethereum
-client and must not determine real transaction validity, fees, or asset settlement.
-Balances are u64; gas is a simplified table without intrinsic/dynamic fork costs;
-call depth and memory limits are host resource limits.
+MiniEVM is a hands-on engineering project for Rust developers interested in the execution
+engines used by EVM and EVM-compatible L2 systems. It follows the flow from a transaction
+into a call frame, through opcode dispatch and state changes, and back into an execution
+result. Its core practice areas are the stack, memory, storage, gas, and opcode semantics,
+with supporting work on calls, control flow, calldata, logs, and rollback.
 
-## Quick start
+MiniEVM is intentionally compact and is not a fork-compatible Ethereum client. Do not
+use it to determine real transaction validity, fees, or asset settlement. Balances are
+`u64`; gas includes simplified opcode, memory, copy, and log charges but omits intrinsic
+gas and fork-specific rules. Call depth and memory limits are runtime resource limits.
+
+## Quick Start
 
 Requirements: stable Rust (edition 2024).
 
@@ -17,29 +22,32 @@ cargo test
 cargo run --example counter
 ```
 
-## Features
+## Core Modules
 
-- `Address`, 256-bit `Word`, and deterministic account state
-- Account balances, nonce, bytecode, and key-value storage
-- Transaction-level checkpoint and rollback boundaries
-- Stack limits, configurable linear-memory limits, and gas metering
-- PUSH, DUP, SWAP, arithmetic, comparison, bitwise operations, calldata, storage, memory,
-  logs, block environment values, jumps, return, and revert
-- Structured `ExecutionResult` and error types; tracing types are reserved interfaces
-  and are not currently connected to the dispatch loop
-- No `unsafe` code, standard Rust formatting, and Clippy-gated CI
+- **Stack:** 256-bit words, operand order, stack limits, and PUSH/DUP/SWAP behavior
+- **Memory:** bounded linear memory, checked ranges, expansion, and return-data copying
+- **Storage:** account state, key-value slots, and transaction or call rollback
+- **Gas:** per-opcode charging, forwarding, and child-frame settlement
+- **Opcodes:** dispatch and semantics for arithmetic, shifts, environment, memory, storage,
+  logs, calls, control flow, return, and revert
+- **Execution flow:** transaction validation, frame lifecycle, nested calls, and structured
+  results and errors
+- **Tracing:** opt-in pre-opcode snapshots across parent and nested call frames
+- **Rust implementation:** deterministic state, no `unsafe` code, and a focused
+  integration-test suite
 
-## Architecture
+## Execution Flow
 
 ```text
 Transaction → Evm → Frame → opcode dispatcher
                  │       ├─ stack / Memory / GasMeter
-                 │       └─ reserved tracer interfaces
+                 │       └─ optional tracer snapshots
                  └─ WorldState → Account → code / storage / balance
 ```
 
-See [docs/architecture.md](docs/architecture.md) for module responsibilities and
-[docs/opcodes.md](docs/opcodes.md) for opcode coverage and stack conventions.
+See [docs/architecture.md](docs/architecture.md) for the execution path and module map,
+[docs/opcodes.md](docs/opcodes.md) for opcode coverage and stack conventions, and
+[docs/development.md](docs/development.md) for a practical route through the codebase.
 
 ## Example
 
@@ -58,7 +66,7 @@ let result = Evm::new(state).transact(Transaction {
 assert!(matches!(result.reason, minievm::core::ExitReason::Succeed));
 ```
 
-## Development workflow
+## Development
 
 ```bash
 cargo fmt --check
@@ -66,11 +74,11 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-Before submitting changes, read [CONTRIBUTING.md](docs/CONTRIBUTING.md),
-[CODE_OF_CONDUCT.md](docs/CODE_OF_CONDUCT.md), and [SECURITY.md](docs/SECURITY.md).
-MiniEVM is licensed under [LGPL-3.0](LICENSE).
+See the [documentation index](docs/README.md), [Code of Conduct](docs/code-of-conduct.md),
+and [Security Policy](docs/security.md) before contributing. MiniEVM is licensed under
+[LGPL-3.0](LICENSE).
 
-## Status and roadmap
+## Scope and Roadmap
 
 The current release focuses on the execution core. Transaction signing and encoding,
 contract creation, additional call-family opcodes, precompiles, fork-specific gas schedules,

@@ -55,6 +55,50 @@ impl Word {
     pub fn invert(self) -> Self {
         Self(std::array::from_fn(|i| !self.0[i]))
     }
+    pub fn shift_left(self, shift: Self) -> Self {
+        let Some(shift) = shift.shift_amount() else {
+            return Self::ZERO;
+        };
+        let limb_shift = shift / 64;
+        let bit_shift = shift % 64;
+        let mut result = [0; 4];
+        for destination in (limb_shift..4).rev() {
+            let source = destination - limb_shift;
+            result[destination] |= self.0[source] << bit_shift;
+            if bit_shift != 0 && source > 0 {
+                result[destination] |= self.0[source - 1] >> (64 - bit_shift);
+            }
+        }
+        Self(result)
+    }
+    pub fn shift_right(self, shift: Self) -> Self {
+        let Some(shift) = shift.shift_amount() else {
+            return Self::ZERO;
+        };
+        let limb_shift = shift / 64;
+        let bit_shift = shift % 64;
+        let mut result = [0; 4];
+        for (destination, output) in result.iter_mut().enumerate().take(4 - limb_shift) {
+            let source = destination + limb_shift;
+            *output |= self.0[source] >> bit_shift;
+            if bit_shift != 0 && source < 3 {
+                *output |= self.0[source + 1] << (64 - bit_shift);
+            }
+        }
+        Self(result)
+    }
+    pub fn shift_arithmetic_right(self, shift: Self) -> Self {
+        let negative = self.0[3] >> 63 != 0;
+        let Some(shift) = shift.shift_amount() else {
+            return if negative { Self([u64::MAX; 4]) } else { Self::ZERO };
+        };
+        let shifted = self.shift_right(Self::from_u64(shift as u64));
+        if !negative || shift == 0 {
+            return shifted;
+        }
+        let fill = Self([u64::MAX; 4]).shift_left(Self::from_u64((256 - shift) as u64));
+        shifted.or(fill)
+    }
     pub fn wrapping_mul(self, rhs: Self) -> Self {
         let mut result = Self::ZERO;
         for i in 0..4 {
@@ -117,6 +161,10 @@ impl Word {
 
     fn set_bit(&mut self, index: usize) {
         self.0[index / 64] |= 1u64 << (index % 64);
+    }
+
+    fn shift_amount(self) -> Option<usize> {
+        self.low_u64_bounded().filter(|shift| *shift < 256).map(|shift| shift as usize)
     }
 
     fn shl1(self) -> Self {

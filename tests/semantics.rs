@@ -63,9 +63,8 @@ fn high_byte_index_does_not_truncate() {
     code.extend([0x1a, 0x60, 0, 0x55, 0]);
     let (evm, r) = run(code, vec![]);
     assert_eq!(r.reason, ExitReason::Succeed);
-    assert_eq!(
-        evm.state.account(Address::from_last_byte(2)).unwrap().storage[&Word::ZERO],
-        Word::ZERO
+    assert!(
+        !evm.state.account(Address::from_last_byte(2)).unwrap().storage.contains_key(&Word::ZERO)
     );
 }
 #[test]

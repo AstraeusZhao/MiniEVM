@@ -23,7 +23,7 @@ impl GasMeter {
     }
 
     /// Caps the forwarded gas to what this frame still has, using the EIP-150 63/64 cap.
-    /// This teaching model does not yet implement the value stipend or fork costs.
+    /// This simplified model does not yet implement the value stipend or fork-specific costs.
     pub fn forward(&mut self, requested: u64) -> Result<u64, VmError> {
         let actual = requested.min(self.remaining - self.remaining / 64);
         self.charge(actual)?;

@@ -16,6 +16,7 @@ pub(super) struct Frame {
     pub(super) caller: Address,
     pub(super) address: Address,
     pub(super) call_value: u64,
+    pub(super) depth: u16,
     pub(super) return_data: Vec<u8>,
 }
 
@@ -24,6 +25,7 @@ impl Frame {
         address: Address,
         caller: Address,
         call_value: u64,
+        depth: u16,
         input: Vec<u8>,
         memory_limit: usize,
     ) -> Self {
@@ -35,6 +37,7 @@ impl Frame {
             caller,
             address,
             call_value,
+            depth,
             return_data: Vec::new(),
         }
     }

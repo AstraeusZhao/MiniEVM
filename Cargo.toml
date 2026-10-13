@@ -2,7 +2,7 @@
 name = "MiniEVM"
 version = "0.1.0"
 edition = "2024"
-description = "A modular Rust execution engine for EVM bytecode"
+description = "A hands-on Rust project for exploring EVM execution engine internals"
 license = "LGPL-3.0-only"
 repository = "https://github.com/AstraeusZhao/MiniEVM"
 readme = "README.md"
