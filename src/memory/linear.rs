@@ -1,6 +1,8 @@
 use crate::error::VmError;
 
 /// Frame-local linear memory with an explicit expansion limit.
+/// Expansion is rounded up to 32 bytes. `Default` permits no nonempty ranges;
+/// use `with_limit` to choose a usable capacity.
 #[derive(Debug, Clone, Default)]
 pub struct Memory {
     bytes: Vec<u8>,
@@ -8,6 +10,7 @@ pub struct Memory {
 }
 
 impl Memory {
+    /// Creates empty memory with a maximum allocated length in bytes.
     pub fn with_limit(max_bytes: usize) -> Self {
         Self { bytes: Vec::new(), max_bytes }
     }

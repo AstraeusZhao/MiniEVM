@@ -4,4 +4,4 @@ mod event;
 mod tracer;
 
 pub use event::Step;
-pub use tracer::{Tracer, VecTracer};
+pub use tracer::{LimitedTracer, Tracer, VecTracer};

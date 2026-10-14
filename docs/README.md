@@ -1,10 +1,15 @@
 # Documentation
 
+## Engineering Plan
+
+- [工程计划](engineering-plan.md): 本轮范围、验收标准和逐步增强路线图。
+
 ## Execution Engine
 
 - [Architecture](architecture.md): transaction, frame, opcode, and state flow.
 - [Development Guide](development.md): implementation conventions and local checks.
-- [Opcode Reference](opcodes.md): supported instructions and simplified Gas costs.
+- [Opcode Reference](opcodes.md): supported instructions and simplified gas costs.
+- [Test Guide](../tests/README.md): coverage and commands.
 
 ## Project Policies
 
@@ -16,5 +21,5 @@
 
 ## Project Records
 
-- [Audit Remediation](audit-remediation.md): implementation findings and current status.
-- [History and Provenance](history-provenance.md): historical references and limitations.
+- [Audit Remediation](records/audit-remediation.md): implementation findings and current status.
+- [History and Provenance](records/history-provenance.md): historical references and limitations.

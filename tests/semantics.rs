@@ -68,9 +68,11 @@ fn high_byte_index_does_not_truncate() {
     );
 }
 #[test]
-fn truncated_push_pads_immediate_on_the_right() {
+fn truncated_push_completes_without_fetching_missing_bytes() {
     let (_, r) = run(vec![0x61, 0xab], vec![]);
     assert_eq!(r.reason, ExitReason::Succeed);
+    assert_eq!(r.gas_used, 3);
+    // Exact padded stack contents are checked in instructions::stack unit tests.
 }
 #[test]
 fn revert_preserves_nonce_and_remaining_gas() {

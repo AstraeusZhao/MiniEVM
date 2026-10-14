@@ -2,6 +2,3 @@
 *.swp
 .idea/
 .vscode/
-
-# Incremental TypeScript compiler cache
-*.tsbuildinfo

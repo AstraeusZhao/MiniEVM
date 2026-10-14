@@ -26,6 +26,14 @@ fn unsigned_division_handles_words_above_64_bits() {
 }
 
 #[test]
+fn modulo_and_greater_than_cover_zero_and_cross_limb_values() {
+    assert_eq!(Word::from_u64(10).unsigned_mod(Word::from_u64(3)), Word::ONE);
+    assert_eq!(Word::from_u64(10).unsigned_mod(Word::ZERO), Word::ZERO);
+    assert_eq!(Word([0, 1, 0, 0]).unsigned_mod(Word::from_u64(2)), Word::ZERO);
+    assert!(Word([0, 1, 0, 0]) > Word::from_u64(u64::MAX));
+}
+
+#[test]
 fn logs_are_returned_in_successful_receipts() {
     let caller = Address::from_last_byte(1);
     let target = Address::from_last_byte(2);

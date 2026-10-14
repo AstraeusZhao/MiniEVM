@@ -10,7 +10,7 @@ fn calldatasize_reports_bytes_including_partial_words() {
     let target = Address::from_last_byte(2);
     let mut state = WorldState::default();
     state.account_mut(caller).balance = 1;
-    // PUSH1 key 0, CALLDATASIZE (value), SSTORE, STOP.
+    // CALLDATASIZE (value), PUSH1 key 0, SSTORE, STOP.
     state.set_code(target, vec![0x36, 0x60, 0x00, 0x55, 0x00]);
     let mut evm = Evm::new(state);
     let result = evm.transact(transaction(caller, target, vec![0xaa; 33]));
@@ -26,7 +26,7 @@ fn call_executes_target_and_commits_its_storage() {
     let mut state = WorldState::default();
     state.account_mut(caller).balance = 1;
     state.set_code(child, vec![0x60, 0x2a, 0x60, 0x00, 0x55, 0x00]);
-    // gas, to, value, in_offset, in_size, out_offset, out_size, CALL, STOP.
+    // Push out_size, out_offset, in_size, in_offset, value, to, gas; CALL, STOP.
     state.set_code(
         parent,
         vec![0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 0, 0x60, 3, 0x61, 0x27, 0x10, 0xf1, 0x00],

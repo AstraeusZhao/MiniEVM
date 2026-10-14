@@ -33,6 +33,8 @@ impl Evm {
         self
     }
 
+    /// Executes one transaction. Validation errors use zero gas; exceptional halts
+    /// use the full budget and preserve only the accepted sender nonce.
     pub fn transact(&mut self, tx: Transaction) -> ExecutionResult {
         self.transact_inner(tx, None)
     }
@@ -53,42 +55,42 @@ impl Evm {
     ) -> ExecutionResult {
         let gas_limit = tx.gas_limit;
         self.state.clear_logs();
-        let checkpoint = self.state.snapshot();
-        let sender = self.state.account(tx.caller).cloned().unwrap_or_default();
-        if sender.nonce != tx.nonce || sender.balance < tx.value {
-            return ExecutionResult {
-                reason: ExitReason::Error,
-                gas_used: 0,
-                output: vec![],
-                logs: vec![],
-            };
+        // Read only validation fields; avoid cloning an account's code and storage.
+        let (sender_nonce, sender_balance) =
+            self.state.account(tx.caller).map_or((0, 0), |sender| (sender.nonce, sender.balance));
+        if sender_nonce != tx.nonce {
+            return ExecutionResult::failed(
+                VmError::InvalidNonce {
+                    account: tx.caller,
+                    expected: sender_nonce,
+                    actual: tx.nonce,
+                },
+                0,
+            );
         }
-        let next_nonce = match sender.nonce.checked_add(1) {
-            Some(nonce) => nonce,
-            None => {
-                return ExecutionResult {
-                    reason: ExitReason::Error,
-                    gas_used: 0,
-                    output: vec![],
-                    logs: vec![],
-                };
-            }
+        if sender_balance < tx.value {
+            return ExecutionResult::failed(
+                VmError::InsufficientBalance {
+                    account: tx.caller,
+                    needed: tx.value,
+                    available: sender_balance,
+                },
+                0,
+            );
+        }
+        let Some(next_nonce) = sender_nonce.checked_add(1) else {
+            return ExecutionResult::failed(VmError::NonceOverflow, 0);
         };
         let target_balance = if tx.caller == tx.target {
             None
         } else {
-            match self.state.balance_of(tx.target).checked_add(tx.value) {
-                Some(balance) => Some(balance),
-                None => {
-                    return ExecutionResult {
-                        reason: ExitReason::Error,
-                        gas_used: 0,
-                        output: vec![],
-                        logs: vec![],
-                    };
-                }
-            }
+            let Some(balance) = self.state.balance_of(tx.target).checked_add(tx.value) else {
+                return ExecutionResult::failed(VmError::ValueOverflow, 0);
+            };
+            Some(balance)
         };
+        // Invalid transactions never need a world-state checkpoint.
+        let checkpoint = self.state.snapshot();
 
         self.state.account_mut(tx.caller).nonce = next_nonce;
         if let Some(target_balance) = target_balance {
@@ -103,6 +105,7 @@ impl Evm {
         ) {
             Ok((output, gas_left)) => ExecutionResult {
                 reason: ExitReason::Succeed,
+                error: None,
                 gas_used: gas_limit - gas_left,
                 output,
                 logs: self.state.logs().to_vec(),
@@ -112,20 +115,16 @@ impl Evm {
                 self.state.account_mut(tx.caller).nonce = next_nonce;
                 ExecutionResult {
                     reason: ExitReason::Revert,
+                    error: None,
                     gas_used: gas_limit - remaining,
                     output,
                     logs: vec![],
                 }
             }
-            Err(_) => {
+            Err(error) => {
                 self.state.restore(checkpoint);
                 self.state.account_mut(tx.caller).nonce = next_nonce;
-                ExecutionResult {
-                    reason: ExitReason::Error,
-                    gas_used: gas_limit,
-                    output: vec![],
-                    logs: vec![],
-                }
+                ExecutionResult::failed(error, gas_limit)
             }
         }
     }
@@ -157,7 +156,9 @@ impl Evm {
         while frame.pc < code.bytes().len() {
             let pc = frame.pc;
             let opcode = code.bytes()[frame.pc];
-            if let Some(tracer) = tracer.as_deref_mut() {
+            if let Some(tracer) = tracer.as_deref_mut()
+                && tracer.capture_next()
+            {
                 tracer.step(Step {
                     address: context.address,
                     depth: context.depth,

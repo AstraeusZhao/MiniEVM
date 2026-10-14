@@ -1,86 +1,114 @@
 # MiniEVM
 
-MiniEVM is a hands-on engineering project for Rust developers interested in the execution
-engines used by EVM and EVM-compatible L2 systems. It follows the flow from a transaction
-into a call frame, through opcode dispatch and state changes, and back into an execution
-result. Its core practice areas are the stack, memory, storage, gas, and opcode semantics,
-with supporting work on calls, control flow, calldata, logs, and rollback.
-
-MiniEVM is intentionally compact and is not a fork-compatible Ethereum client. Do not
-use it to determine real transaction validity, fees, or asset settlement. Balances are
-`u64`; gas includes simplified opcode, memory, copy, and log charges but omits intrinsic
-gas and fork-specific rules. Call depth and memory limits are runtime resource limits.
+A compact Rust project for learning how an EVM execution engine works, one tested change
+at a time. Follow a transaction through frames, opcode dispatch, gas accounting, state
+changes, and rollback.
 
 ## Quick Start
 
-Requirements: stable Rust (edition 2024).
+Install Rust through rustup. The repository selects **Rust 1.97.1**, Edition 2024,
+with rustfmt and Clippy. There are no third-party Cargo dependencies.
 
 ```bash
 git clone https://github.com/AstraeusZhao/MiniEVM
 cd MiniEVM
-cargo test
-cargo run --example counter
+cargo test --locked
+cargo run --locked --example counter
+cargo run --locked --example trace
 ```
 
-## Core Modules
+The counter example submits two transactions and prints:
 
-- **Stack:** 256-bit words, operand order, stack limits, and PUSH/DUP/SWAP behavior
-- **Memory:** bounded linear memory, checked ranges, expansion, and return-data copying
-- **Storage:** account state, key-value slots, and transaction or call rollback
-- **Gas:** per-opcode charging, forwarding, and child-frame settlement
-- **Opcodes:** dispatch and semantics for arithmetic, shifts, environment, memory, storage,
-  logs, calls, control flow, return, and revert
-- **Execution flow:** transaction validation, frame lifecycle, nested calls, and structured
-  results and errors
-- **Tracing:** opt-in pre-opcode snapshots across parent and nested call frames
-- **Rust implementation:** deterministic state, no `unsafe` code, and a focused
-  integration-test suite
+```text
+counter = 0
+nonce=0, counter=1, gas_used=160
+nonce=1, counter=2, gas_used=160
+```
+
+The trace example shows the stack, PC, opcode, and gas before each instruction,
+then returns the byte `2a` using `PUSH0` and `MSTORE8`.
 
 ## Execution Flow
 
-```text
-Transaction → Evm → Frame → opcode dispatcher
-                 │       ├─ stack / Memory / GasMeter
-                 │       └─ optional tracer snapshots
-                 └─ WorldState → Account → code / storage / balance
+```mermaid
+flowchart LR
+    T[Transaction] --> V[Validate nonce and balance]
+    V --> C[Checkpoint and transfer]
+    C --> F[Frame: stack, memory, gas]
+    F --> D[Opcode dispatcher]
+    D --> S[WorldState]
+    D --> N[Child CALL frame]
+    N --> D
+    D --> R[ExecutionResult]
+    R --> OK[Commit on success]
+    R --> RB[Restore on revert or error; retain accepted nonce]
 ```
 
-See [docs/architecture.md](docs/architecture.md) for the execution path and module map,
-[docs/opcodes.md](docs/opcodes.md) for opcode coverage and stack conventions, and
-[docs/development.md](docs/development.md) for a practical route through the codebase.
+## What You Can Explore
+
+| Area | Current implementation |
+| --- | --- |
+| Words and stack | Self-contained 256-bit arithmetic including MOD/GT, 1,024-word stack, PUSH0/PUSH/DUP/SWAP |
+| Memory | Bounded linear memory, MLOAD/MSTORE/MSTORE8, checked expansion and copying |
+| State | Deterministic accounts and storage, value transfers, nested rollback, committed logs |
+| Gas | Base prices, memory/copy/log charges, CALL forwarding and settlement |
+| Execution | Control flow, calldata, return data, block environment, CALL, RETURN and REVERT |
+| Diagnostics | Concrete errors, shared opcode metadata, unlimited or bounded tracing |
+
+See the [architecture](docs/architecture.md) and [opcode reference](docs/opcodes.md)
+for the module map, operand ordering, prices, and boundary rules.
 
 ## Example
 
 ```rust
-use minievm::{Address, Evm, Transaction, WorldState};
+use minievm::{Address, Evm, ExitReason, Transaction, Word, WorldState};
 
 let caller = Address::from_last_byte(1);
 let contract = Address::from_last_byte(2);
 let mut state = WorldState::default();
-state.account_mut(caller).balance = 1_000;
-state.set_code(contract, vec![0x60, 0x2a, 0x60, 0x00, 0x55, 0x00]);
-
-let result = Evm::new(state).transact(Transaction {
-    caller, target: contract, value: 0, input: vec![], gas_limit: 100_000, nonce: 0,
+// PUSH1 42, PUSH0, SSTORE, STOP: storage[0] = 42.
+state.set_code(contract, vec![0x60, 42, 0x5f, 0x55, 0x00]);
+let mut evm = Evm::new(state);
+let result = evm.transact(Transaction {
+    caller, target: contract, value: 0, input: vec![], gas_limit: 1_000, nonce: 0,
 });
-assert!(matches!(result.reason, minievm::core::ExitReason::Succeed));
+assert_eq!(result.reason, ExitReason::Succeed);
+assert_eq!(evm.state.account(contract).unwrap().storage[&Word::ZERO], Word::from_u64(42));
 ```
+
+For failures, inspect `result.error`, which retains the specific `VmError`.
+REVERT has its own exit reason and returns bytes in `result.output`.
+The crate documentation contains a compiled version of this example.
+
+## Scope and Incremental Development
+
+Balances use `u64`; gas and transaction rules are simplified and independent of Ethereum
+forks. Runtime defaults are 64 active frames and 16 MiB of memory per frame. MiniEVM is
+not a fork-compatible client and must not be used for real fees or asset settlement.
+
+The [工程计划 / engineering plan](docs/engineering-plan.md) records completed work and
+future candidates. Each iteration adds a small, testable capability. More instructions,
+hashing, call variants, creation, and tooling can be explored as the project grows.
+RPC, persistence, signing, state tries, and a frontend are optional future directions.
+
+Public APIs may change throughout `0.x`. This iteration adds `ExecutionResult::error`
+and `VmError::NonceOverflow`; code constructing receipts or exhaustively matching errors
+must account for these changes. The unused legacy `VmError::Reverted` variant is removed;
+transaction callers should check `ExitReason::Revert` and `ExecutionResult::output`.
 
 ## Development
 
 ```bash
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
+cargo doc --no-deps --locked
 ```
 
-See the [documentation index](docs/README.md), [Code of Conduct](docs/code-of-conduct.md),
-and [Security Policy](docs/security.md) before contributing. MiniEVM is licensed under
-[LGPL-3.0](LICENSE).
+GitHub Actions runs formatting, Clippy, tests and documentation on push and pull requests.
+These checks are an engineering quality gate; see the [scan scope](docs/security-scan-scope.md).
 
-## Scope and Roadmap
-
-The current release focuses on the execution core. Transaction signing and encoding,
-contract creation, additional call-family opcodes, precompiles, fork-specific gas schedules,
-and the Ethereum state trie are planned as follow-up modules. Public APIs may change
-throughout the `0.x` series.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md), the [development guide](docs/development.md),
+and the [documentation index](docs/README.md). Historical records live in `docs/records/`.
+See the [Code of Conduct](docs/code-of-conduct.md) and [Security Policy](docs/security.md).
+Licensed under [LGPL-3.0-only](LICENSE).

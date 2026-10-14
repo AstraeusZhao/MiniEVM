@@ -1,6 +1,7 @@
 use std::fmt;
 
 /// A fixed 256-bit EVM word. Arithmetic wraps modulo 2^256.
+/// Limbs are least-significant first; byte conversions use big-endian order.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Word(pub [u64; 4]);
 
@@ -10,6 +11,7 @@ impl Word {
     pub const fn from_u64(value: u64) -> Self {
         Self([value, 0, 0, 0])
     }
+    /// Returns the low 64 bits, discarding the upper 192 bits.
     pub fn low_u64(self) -> u64 {
         self.0[0]
     }
@@ -112,9 +114,19 @@ impl Word {
         }
         result
     }
+    /// Returns the EVM unsigned quotient; a zero divisor returns zero.
     pub fn unsigned_div(self, rhs: Self) -> Self {
+        self.unsigned_div_mod(rhs).0
+    }
+
+    /// Returns the EVM unsigned remainder; a zero divisor returns zero.
+    pub fn unsigned_mod(self, rhs: Self) -> Self {
+        self.unsigned_div_mod(rhs).1
+    }
+
+    fn unsigned_div_mod(self, rhs: Self) -> (Self, Self) {
         if rhs.is_zero() {
-            return Self::ZERO;
+            return (Self::ZERO, Self::ZERO);
         }
 
         let mut quotient = Self::ZERO;
@@ -130,7 +142,7 @@ impl Word {
                 quotient.set_bit(bit_index);
             }
         }
-        quotient
+        (quotient, remainder)
     }
     /// Returns the EVM BYTE result for a byte index in the range 0..=31.
     pub fn byte(self, index: u64) -> Self {
@@ -140,6 +152,7 @@ impl Word {
         let bytes = self.to_be_bytes();
         Self::from_u64(bytes[index as usize] as u64)
     }
+    /// Reads a big-endian integer, retaining the final 32 bytes if longer.
     pub fn from_be_slice(bytes: &[u8]) -> Self {
         let mut result = [0u64; 4];
         for (i, byte) in bytes.iter().rev().take(32).enumerate() {
